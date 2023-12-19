@@ -1,0 +1,119 @@
+---
+title: "Airline Passenger"
+author: "Theo"
+date: "2023-11-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Package(s)
+
+```{r}
+library(tswge)
+```
+
+## Data Preprocessing
+
+```{r}
+data("AirPassengers") #Loading the data
+air= AirPassengers
+plotts.wge(air)
+```
+
+*Comment*
+
+From the graph above we can see that there is an upward trend, this means that the mean is not constant. Also there is an issue with constant variance. There seem to be more variability as we move forward in time. To deal with the contant variance issue, we will consider logging the data.
+
+```{r}
+lair= log(air)
+plotts.wge(lair)
+```
+
+*Comment*
+
+Logging the data seem to handle  the constant variance issue, thus we will do the analysis with the log data.
+
+
+## EDA
+
+```{r}
+plt.1= plotts.sample.wge(lair, lag.max = 40, arlimits = T)
+```
+
+*Comment*
+
+The graph of the realization has an upward trend, this means that the mean is dependent on time. Also we have a deterministic behavior (seasonal) with a period of 12, thus, we have a nonstationary data. The acf plot shows that the sample autocorrelations are damping slowly and even at lag 25, the observations seem to have a fairly strong correlation. Also, from the acf plot we see that there is some kind of 'wave' like behavior and there seem to be a bump after every lag 12. This is consistent with the behavior from the realization. The spectral density plot has a peak at a frequency of 0 and also there are other bumps we see and the frequency for these bumps are around .09, .19, .25, .35,.45 and .5.
+
+We might need s= 12, since we have a deterministic behavior with a cycle length of 12. We need an overfit table to see if indeed we will need s= 12. To be sure if s= 12 is needed we will compare the overfit table with the theoretical table with s= 12. If the overfit table produces the same behavior as the theoretical table, then s= 12 is indeed need.
+
+## Overfit
+
+```{r}
+ovefit= est.ar.wge(lair, p= 24, method = 'burg')
+
+theoretical= factor.wge(phi= c(rep(0, 11),1))
+```
+
+*Comment*
+
+Comparing the overfit table with the theoretical factor table of s= 12, we can see that from the overfit table we have about 7 characteristic equations whose absolute reciprocal are close to the unit circle (1).  The characteristic equations have system frequency that are slightly the same as the system frequency from the theoretical factor table expect $1-1.9696B+0.9704B^2$ whose system frequency is .0037 (aproximately 0) and $1+1.8746B+0.9017B^2$ whose system frequency is .4744 (aproximately .5). The characteristic equation is quite consistent with $1-2B+B^2$ or $(1-B)^2$ and $1+1.8746B+0.9017B^2$ is also slightly consistent with $1+2B+B^2$ or $(1+B)^2$. Thus, we need to difference the data with s=12.
+
+## Differencing the Data
+
+```{r}
+dif.lair= artrans.wge(lair, phi.tr = c(rep(0,11), 1), plottr = F)
+dif.plt= plotts.sample.wge(dif.lair, lag.max = 25, arlimits = T)
+```
+
+*Comment*
+
+From the graph of the realization we do not see the deterministic (seasonal) behavior, however, we can see that there is an aperiodic (wandering) behavior, this implies that, the mean of the series is still dependent on time, thus, we still don't have a stationary process. The sample autocorrelation from the acf has a damped exponential behavior which is consistent with the wandering behavior seen the realization. The spectral density plot have a peak at a frequency of 0 which is also consistent with the wandering behavior see in the realization. This means that a $(1-B)$ might be needed (look at the overfit table of the difference data to see if  an absolute reciprocal of a (1-B) term is close to the unit circle (1)).
+
+```{r}
+overfit2= est.ar.wge(dif.lair, p=12, method = 'burg')
+```
+
+*Comment*
+
+From the factor table an absolute reciprocal that is close to the unit circle is .9669 and its characteristic equation is $1-1.9047B+0.9349B^2$ which is approximately the same as $1-2B+B^2$ or $(1-B)^2$. 
+
+This means that we might need to difference the data with d=2.
+
+### 2nd Difference
+
+```{r}
+diff.lair= artrans.wge(dif.lair, phi.tr = 1, plottr = F)
+diff.plt= plotts.sample.wge(diff.lair, lag.max = 25, arlimits = T)
+pacf.plt= pacfts.wge(diff.lair, limits = T)
+```
+
+*Comment*
+
+After the first difference we can see that the graph of the realization has some sort of oscillatory behavior, the acf plot also do indicate that the data points are uncorrelated, hence we have achieved stationarity (constant variance is slightly an issue to deal with). We can't log the differenced data because we have negative values in the realization. The sample autocorrelation from the pacf plot has a spike outside the 95% limit bound which is an indication that we do not have a white noise.
+
+
+Since we have achieved stationarity but the noise is not a white noise, we need to model the remaining noise with an ARMA model.
+
+# Model Selection and Parameter Estimation
+
+```{r}
+aic5.wge(diff.lair, p= 0:15, q= 0:5)
+```
+
+```{r}
+para= est.arma.wge(diff.lair, p= 12, q= 5)
+```
+```{r}
+#Checking if the residual of the model is a white noise 
+res.plt= plotts.sample.wge(para$res, arlimits = T)
+res.pacf= pacfts.wge(para$res, limits = T)
+```
+
+*Comment*
+
+The realization from the residual of the model oscillates around 0, the sample autocorrelation from the acf plot has a spike at 0 and all the remaining lie with the 95% limit bound except the autocorrelation at maybe lag 19. However, we can still conclude that the sample points are uncorrelated. The spectral density plot looks fairly flat when zoomed out. The sample autocorrelations from the pacf plot all lie with the 95% limit bound. 
+
+These behavior from the residual of the model looks quite consistent with the behavior of a white noise, thus, we have a good or potentially useful model.
